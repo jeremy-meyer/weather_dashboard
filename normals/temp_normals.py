@@ -1,5 +1,3 @@
-from patsy import dmatrix
-import statsmodels.api as sm
 import pandas as pd
 from numpy import mean
 from matplotlib import pyplot as plt
@@ -7,40 +5,26 @@ from datetime import date
 import seaborn as sns
 import calplot
 from matplotlib.colors import LinearSegmentedColormap
+import statsmodels.api as sm
+from patsy import dmatrix
+from utils.shared_functions import *
 
-# Config
-N_years = 30
-current_year = 2025
 
 # Subset relevant data
-full_data = pd.read_csv('weather/data_sources/'+'daily_weather.csv', index_col=False)
+full_data = pd.read_csv('raw_sources/'+'daily_weather.csv', index_col=False, parse_dates=['date'])
 temperatures = full_data[['date', 'avg_temp', 'min_temp', 'max_temp']].copy()
-temperatures['date'] = pd.to_datetime(temperatures['date'])
 temperatures['year'] = temperatures['date'].dt.year
-month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 temperatures['month'] = pd.Categorical(temperatures['date'].dt.strftime('%b'), categories=month_order, ordered=True)
-
-# Create 1/2 index for leap year so we can intepret "hottest day of year" correctly
-# This will put Feb 29th between 2-28 and 3-1 in the model
-def gen_DoY_index(x):
-  if x.is_leap_year:
-    if x.dayofyear > 60:
-      return x.dayofyear - 1
-    elif x.dayofyear==60:
-      return x.dayofyear - 0.5
-  return x.dayofyear
-
-# Inverse DoY function (year is not a leap year)
-def dayofyear_to_month_day(doy):
-  dt = pd.Timestamp(f"2025-01-01") + pd.Timedelta(days=doy-1)
-  if doy==59.5:
-    return "Feb 29"
-  return dt.strftime('%b %d')
-
-# Create Day of Year Index Column
 temperatures['day_of_year'] = temperatures['date'].apply(gen_DoY_index)
-data_for_normal = temperatures.loc[temperatures['year'].between(current_year - N_years, current_year-1)].copy()
+
+# Calculate 30 year normal based on last complete decade
+current_year = temperatures['year'].max()
+N_years = 30
+normal_start_year, normal_end_year = calc_normal_years(current_year, N_years)
+data_for_normal = temperatures.loc[temperatures['year'].between(normal_start_year, normal_end_year)].copy()
 data_for_normal['date_formatted'] = data_for_normal['date'].dt.strftime('%b-%d')
+print(f"Calculating normals from {normal_start_year} to {normal_end_year}")
+
 
 # MODEL SECTION --------------------------------------------------------------
 # Use cyclic spline so endpoints line up and are continous
@@ -74,7 +58,7 @@ basis_normal = dmatrix(
 # Goal: Pick smallest df where the error is minimized
 # Errors tend to taper off after df=5, so this is likley limit before overfitting
 
-cv_metric = 'min_temp'
+cv_metric = 'avg_temp'
 dfs = range(2,25)
 df_errors = dict()
 
@@ -104,7 +88,7 @@ for df in dfs:
     errors_all_years.append(mae)
   
   df_errors[df] = mean(errors_all_years)
-  print(f"FInished {df}")
+  print(f"Finished {df}")
 pd.DataFrame(df_errors.items(), columns=['df', 'error']).sort_values('error')
 
 plt.plot(df_errors.keys(), df_errors.values(), color='skyblue')
@@ -123,12 +107,12 @@ alt_model_input = (
   .agg(
     max_temp=('max_temp', 'mean'),
     min_temp=('min_temp', 'mean'),
-    mean_temp=('avg_temp', 'mean'),
+    avg_temp=('avg_temp', 'mean'),
   )
   .reset_index()
 )
 
-knots_to_display = [6,13]
+knots_to_display = [5,9]
 for k in knots_to_display:
   basis = dmatrix(
     f"1 + cc(day_of_year, df={k}, constraints='center', upper_bound=366)",
@@ -139,7 +123,7 @@ for k in knots_to_display:
   alt_model_input[f'prediction_{k}'] = round(model.predict(basis),2)
 
 
-alt_model_input.sort_values('prediction_5', ascending=False)
+alt_model_input.sort_values('day_of_year', ascending=False)
 colors = ['darkred', 'orange', 'gold', 'darkyellow', 'green']
 sns.scatterplot(alt_model_input, x='day_of_year', y=cv_metric, legend=None, alpha=0.5, color='red', size=3)
 for i, k in enumerate(knots_to_display):
@@ -148,9 +132,9 @@ plt.title(f'Average {cv_metric}')
 plt.show()
 
 # Results:
-# DF=13 for max_temp
+# DF=7 for max_temp (less noisy)
 # DF=6 for min_temp
-# DF=6 for avg_temp
+# DF=5 for avg_temp
 
 # "Normals" Model inference -------------------------
 def create_model(metric, df):
@@ -165,9 +149,9 @@ def create_model(metric, df):
   predictions = round(model_norm.predict(basis_normal),2)
   return {"basis": basis_normal, "model": model_norm, "predictions": predictions}
 
-high_temp_model = create_model("max_temp", 13)
+high_temp_model = create_model("max_temp", 7)
 low_temp_model = create_model("min_temp", 6)
-avg_temp_model = create_model("avg_temp", 6)
+avg_temp_model = create_model("avg_temp", 5)
 # data_for_normal.drop(['initial_prediction'], inplace=True, axis=1)
 data_for_normal['normal_high'] = high_temp_model['predictions']
 data_for_normal['normal_low'] = low_temp_model['predictions']
@@ -176,18 +160,18 @@ data_for_normal['normal_temp'] = avg_temp_model['predictions']
 # What is avg hottest / coldest day of year on avg?
 
 (
-  data_for_normal[data_for_normal['year']==2024]
+  data_for_normal[data_for_normal['year']==normal_end_year]
   [['day_of_year','date_formatted','normal_high']]
   .sort_values(by='normal_high', ascending=False)
 )
 (
-  data_for_normal[data_for_normal['year']==2024]
+  data_for_normal[data_for_normal['year']==normal_end_year]
   [['day_of_year','date_formatted','normal_low']]
   .sort_values(by='normal_low', ascending=True)
 )
 
 # Jan 4th is the coldest day of the year
-# July 20th is hottest day of the year
+# July 26th is hottest day of the year
 
 # Sanity Check work
 (
@@ -250,12 +234,12 @@ combined = (
   .merge(high_quantiles, on='day_of_year', how='left')
   .merge(low_quantiles, on='day_of_year', how='left')
 )
-one_year = combined[combined['year']==2024]
+one_year = combined[combined['year']==normal_end_year - (normal_end_year % 4)] # make sure to get a leap year
 
 # Write out normals to CSV
 (
   one_year
   .rename(columns={'max_temp_p10_0_fit': 'max_temp_p10', 'max_temp_p90_0_fit': 'max_temp_p90', 'min_temp_p10_0_fit': 'min_temp_p10', 'min_temp_p90_0_fit': 'min_temp_p90'})
   [['date_formatted', 'day_of_year', 'month', 'day_of_year', 'normal_high', 'normal_low', 'normal_temp', 'max_temp_p10', 'max_temp_p90', 'min_temp_p10', 'min_temp_p90']]
-  .to_csv('weather/output_sources/temp_normals.csv', index=False)
+  .to_csv('output_sources/temp_daily_normals.csv', index=False)
 )
