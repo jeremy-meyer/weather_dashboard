@@ -12,7 +12,7 @@ load_dotenv()
 
 YOURAPIKEY = os.getenv('YOURAPIKEY')
 base_url_weather_request = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/weatherdata/history?&aggregateHours=24&"
-csv_subdir = 'weather/data_sources/'
+csv_subdir = 'raw_sources/'
 location = "Salt Lake City, UT, US"
 combined_file = 'daily_weather.csv'
 
@@ -81,40 +81,22 @@ df_cleaned = clean_transform_raw_csv(df)
 append_to_csv(csv_subdir + combined_file, df_cleaned)
 
 
-# Pull Data for multiple years + save to separate files-------------
-years = range(1970,1972) # Pull from API
-dfs = dict()
-for year in years:
-    start_time = f"{year}-01-01T00:00:00"
-    end_time = f"{year}-12-31T00:00:00"
-    dfs[year] = clean_transform_raw_csv(pull_weather_data(start_time, end_time, location))
-    # df.to_csv(f'{csv_subdir}/slc_{year}.csv', index=False)
-    print(f"Finished {year}")
+# # AD HOC: Pull Data for multiple years + save to separate files-------------
+# years = range(1970,1972) # Pull from API
+# dfs = dict()
+# for year in years:
+#     start_time = f"{year}-01-01T00:00:00"
+#     end_time = f"{year}-12-31T00:00:00"
+#     dfs[year] = clean_transform_raw_csv(pull_weather_data(start_time, end_time, location))
+#     # df.to_csv(f'{csv_subdir}/slc_{year}.csv', index=False)
+#     print(f"Finished {year}")
 
-# combine all years + append
-append_to_csv(csv_subdir + combined_file, pd.concat(dfs.values(), ignore_index=True))
-
-
-# Write combined file (only need to do once)
-filepaths = [csv_subdir+'/'+f for f in os.listdir(csv_subdir) if (f.endswith('.csv') and f.startswith('slc'))]
-df_raw = pd.concat(map(lambda x: pd.read_csv(x, index_col=False), filepaths))
-combined_df = clean_transform_raw_csv(df_raw)
-combined_df.to_csv(csv_subdir+combined_file, index=False)
+# # combine all years + append
+# append_to_csv(csv_subdir + combined_file, pd.concat(dfs.values(), ignore_index=True))
 
 
-# Future Ideas ------------------
-# Look at snowfall / rainfall extremes
-# Plot sunrise/sunset hours
-
-# Longest time without rain
-
-# Atmospheric pressure?
-
-# Dashboard (how normal is today?)
-# clean up ingest code
-
-# Dashboard
-# Current conditions & how normal is today
-# Historical departures from normal (monthly view)
-# 
-
+# # Write combined file (only need to do once)
+# filepaths = [csv_subdir+'/'+f for f in os.listdir(csv_subdir) if (f.endswith('.csv') and f.startswith('slc'))]
+# df_raw = pd.concat(map(lambda x: pd.read_csv(x, index_col=False), filepaths))
+# combined_df = clean_transform_raw_csv(df_raw)
+# combined_df.to_csv(csv_subdir+combined_file, index=False)

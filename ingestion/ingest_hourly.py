@@ -2,13 +2,14 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
+# AD HOC READ ONLY
 
 paths = [
-  'weather/data_sources/1994-2009.csv',
-  'weather/data_sources/2010-2014.csv',
-  'weather/data_sources/2015-2018.csv',
-  'weather/data_sources/2019.csv',
-  'weather/data_sources/2020-2025.csv',
+  'data_sources/1994-2009.csv',
+  'data_sources/2010-2014.csv',
+  'data_sources/2015-2018.csv',
+  'data_sources/2019.csv',
+  'data_sources/2020-2025.csv',
 ]
 
 column_map = {
@@ -26,7 +27,7 @@ column_map = {
 }
 
 sun_times = (
-  pd.read_csv('weather/data_sources/sunrise_set.csv')
+  pd.read_csv('data_sources/sunrise_set.csv')
   .rename(columns={'time': 'day','sunset (iso8601)': 'sunset', 'sunrise (iso8601)': 'sunrise'})
 )
 sun_times['day'] = pd.to_datetime(sun_times['day']).dt.date
@@ -36,11 +37,11 @@ hourly_combined['timestamp'] = pd.to_datetime(hourly_combined['timestamp'])
 hourly_combined['day'] = pd.to_datetime(hourly_combined['timestamp']).dt.date
 hourly_combined = hourly_combined.merge(sun_times, on='day', how='left')
 
-hourly_combined.to_csv('weather/data_sources/slc_hourly_weather.csv', index=False)
+hourly_combined.to_csv('data_sources/slc_hourly_weather.csv', index=False)
 
 
 # Sanity Check
-hourly_raw = pd.read_csv('weather/data_sources/slc_hourly_weather.csv')
+hourly_raw = pd.read_csv('data_sources/slc_hourly_weather.csv')
 hourly_raw['timestamp'] = pd.to_datetime(hourly_raw['timestamp'])
 hourly_raw['year'] = pd.to_datetime(hourly_raw['timestamp']).dt.year
 hourly_raw['month'] = pd.to_datetime(hourly_raw['timestamp']).dt.strftime('%b')

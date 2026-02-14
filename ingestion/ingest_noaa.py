@@ -3,6 +3,8 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
+import numpy as np
+from utils.shared_functions import *
 
 load_dotenv()
 
@@ -10,30 +12,30 @@ load_dotenv()
 # It has more accurate precipation data, and the temperature is recorded at the SLC airport
 
 cols_to_rename = {
-       'DATE': 'date',
-    'TMAX': 'tempmax',
-      'TMIN': 'tempmin',
-      'TAVG': 'tempavg',
-      'PRCP': 'precip',
-      'SNOW': 'snow',
-      'SNWD': 'snow_depth',
-      'STATION': 'station',
-      'NAME': "location",
-      'ACMH': 'avg_cloud',
-      'ACSH': 'avg_cloud_daytime',
-      'AWND': 'avg_wind',
-      'PSUN': 'sun_perc',
-      'SN02': 'min_soil_temp_10cm',
-      'SN03': 'min_soil_temp_20cm',
-      'SX02': 'max_soil_temp_10cm',
-      'SX03': 'max_soil_temp_20cm',
-      'TSUN': 'sunshine_hours',
-      'WDF2': 'wind_direction',
-      'WESD': 'water_snow_depth', 
+  'DATE': 'date',
+  'TMAX': 'tempmax',
+  'TMIN': 'tempmin',
+  'TAVG': 'tempavg',
+  'PRCP': 'precip',
+  'SNOW': 'snow',
+  'SNWD': 'snow_depth',
+  'STATION': 'station',
+  'NAME': "location",
+  'ACMH': 'avg_cloud',
+  'ACSH': 'avg_cloud_daytime',
+  'AWND': 'avg_wind',
+  'PSUN': 'sun_perc',
+  'SN02': 'min_soil_temp_10cm',
+  'SN03': 'min_soil_temp_20cm',
+  'SX02': 'max_soil_temp_10cm',
+  'SX03': 'max_soil_temp_20cm',
+  'TSUN': 'sunshine_hours',
+  'WDF2': 'wind_direction',
+  'WESD': 'water_snow_depth', 
 }
 
 # Determine what data needs incremental update
-existing_data = pd.read_csv('weather/data_sources/noaa_precip.csv')
+existing_data = pd.read_csv('raw_sources/noaa_precip.csv')
 
 # EXTRACT DATA --------------------------------------------------
 # We will consider updating nulls in the last 6 months
@@ -115,10 +117,39 @@ for c in existing_data.columns:
 # Ensure there aren't duplicate dates
 assert (upserted_data['date'].is_unique) & all(upserted_data['date'].notna()), "Duplicate or null dates found after merge!"
 
-# Write out
-upserted_data.to_csv('weather/data_sources/noaa_precip.csv', index=False)
+# Write out raw ingested feed
+upserted_data.to_csv('raw_sources/noaa_precip.csv', index=False)
 
+# WRITE SILVER LEVEL TABLE FOR ANALYSIS -----------------------------------
+precip_raw = pd.read_csv('raw_sources/noaa_precip.csv', index_col=False, parse_dates=['date'])
+precip = precip_raw[['date','precip' ,'snow', 'snow_depth', 'tempmin', 'tempmax']].copy()
+precip['month'] = pd.Categorical(precip['date'].dt.strftime('%b'), categories=month_order, ordered=True)
+precip['date'] = pd.to_datetime(precip['date'])
+precip['year'] = precip['date'].dt.year
+precip['precip_day'] = (precip['precip'] > 0).astype(int)
 
+# Define snow season as Aug - July (I know water season is Oct - Sep, but we have had snow in Sep and I would rather count that in next season)
+precip['snow_season'] = np.where(precip['month'].isin(['Aug', 'Sep', 'Oct', 'Nov', 'Dec']), precip['year'], precip['year'] - 1)
+precip['snow_season'] = precip['snow_season'].astype(str) + '-' + (precip['snow_season'] + 1).astype(str)
+
+precip['water_year'] = np.where(precip['month'].isin(['Oct', 'Nov', 'Dec']), precip['year']+1, precip['year'])
+precip['day_of_year'] = precip['date'].apply(gen_DoY_index)
+
+# Problem: We don't have a clear way to separate rain from snow. We must make assumptions
+# If max_temp < 29, it's all snow
+# If min_temp > 37, it's all rain
+# Otherwise use 8:1 ratio, since wetter snow is heavier than 10:1
+SWE_ratio = 8
+
+precip['rain'] = np.where(
+    precip['tempmin'] > 37, precip['precip'], np.where(
+        precip['tempmax'] < 29, 0, np.maximum(precip['precip'] - precip['snow']/SWE_ratio, 0)
+    )
+)
+precip['snow_water_equiv'] = precip['precip'] - precip['rain']
+# snow_water_equiv + rain = precip
+
+precip.to_csv('output_sources/precip_table.csv', index=False)
 
 # Ad HOC READ
 # noaa = pd.read_csv('weather/data-sources/noaa_raw.csv')
