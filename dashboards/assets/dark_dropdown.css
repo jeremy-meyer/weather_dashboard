@@ -1,0 +1,34 @@
+/* Style the dropdown control (input box) */
+.dark-dropdown .Select-control {
+    background-color: #343a40; /* Dark background */
+    color: #f8f9fa; /* Light text color */
+    border-color: #495057; /* Darker border */
+}
+
+/* Style the selected value's text */
+.dark-dropdown .Select-value-label {
+    color: #f8f9fa !important; /* Ensure light text color */
+}
+
+/* Style the placeholder text */
+.dark-dropdown .Select-placeholder {
+    color: #adb5bd; /* Lighter grey for placeholder */
+}
+
+/* Style the dropdown menu container */
+.dark-dropdown .Select-menu-outer {
+    background-color: #343a40; /* Dark background for menu */
+    border-color: #495057; /* Darker border for menu */
+}
+
+/* Style individual options in the dropdown menu */
+.dark-dropdown .Select-option {
+    background-color: #343a40; /* Dark background for options */
+    color: #f8f9fa; /* Light text color for options */
+}
+
+/* Style hovered options */
+.dark-dropdown .Select-option.is-focused {
+    background-color: #495057; /* Slightly lighter background on hover */
+    color: #f8f9fa;
+}
