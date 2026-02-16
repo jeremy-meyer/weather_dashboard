@@ -42,3 +42,13 @@ def calc_normal_years(current_year, N_years=30, last_complete_decade=True):
     end_year = current_year-1
   start_year = end_year - N_years + 1
   return (start_year, end_year)
+
+def create_bins(x, bins, labels, max_label):
+  for i, bin_val in enumerate(bins):
+    if x <= bin_val:
+      return labels[i]
+  return max_label
+
+def str_to_decimal_hr(s):
+  h, m = s.split('T')[1].split(':')
+  return int(h) + int(m)/60.0

@@ -9,55 +9,21 @@ import plotly.graph_objects as go
 from datetime import date, datetime
 from plotly_calplot import calplot
 import statsmodels.api as sm
+
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+print(os.getcwd())
+from utils.shared_functions import *
+
 
 
 pio.templates.default = "plotly_dark"
 pio.renderers.default = "browser"
 
-# Create 1/2 index for leap year so we can intepret "hottest day of year" correctly
-# This will put Feb 29th between 2-28 and 3-1 in the model
-def gen_DoY_index(x, year_type='calendar_year'):
-  excess = {
-      'calendar_year': 0,
-      'water_year': 92,
-      'snow_season': 153,
-  }[year_type]
-  
-  mar1_day = 60
-  return_value = x.dayofyear
-
-
-  if x.is_leap_year:
-    if x.dayofyear > mar1_day:
-      return_value -= 1 
-    elif x.dayofyear == mar1_day:
-      return_value -= 0.5
-
-  return (return_value + excess - 1) % 365 + 1
-
-def dayofyear_to_month_day(doy):
-  dt = pd.Timestamp(f"2025-01-01") + pd.Timedelta(days=doy-1)
-  if doy==59.5:
-    return "Feb 29"
-  return dt.strftime('%b %d')
-
-def str_to_decimal_hr(s):
-  h, m = s.split('T')[1].split(':')
-  return int(h) + int(m)/60.0
-
-def offset_season(s, offset):
-  return str(int(s.split('-')[0]) + offset) + '-' + str(int(s.split('-')[1]) + offset)
-
-def create_bins(x, bins, labels, max_label):
-  for i, bin_val in enumerate(bins):
-    if x <= bin_val:
-      return labels[i]
-  return max_label
-
 # SHARED CONFIGS ---------------------
 temp_colors = [
-    '#3b4cc0', '#528ecb', '#7fb8da', '#b5d5e6', 
+    '#3b4cc0', '#528ecb', "#8399a5", '#b5d5e6', 
     '#e0e0e0',"#e0e0e0", "#e0e0e0", 
     '#f6bfa6', '#ea7b60', '#c63c36', '#962d20',
 ]
@@ -122,14 +88,14 @@ def generic_data_table(df, id, page_size=10, clean_table=False, metric_value=Non
 # Initialize the app
 external_stylesheets = [dbc.themes.BOOTSTRAP, dbc.themes.DARKLY, 'dark_dropdown.css']
 
-app = Dash(__name__, external_stylesheets=external_stylesheets, assets_folder='./weather/dashboards/assets/')
+app = Dash(__name__, external_stylesheets=external_stylesheets, assets_folder='./dashboards/assets/')
 
 # INPUT DATA
 N_years = 30 # For normals
 
-temps = pd.read_csv("weather/data_sources/daily_weather.csv", parse_dates=['date'])#.query("date >= '1995-01-01'")
-normals = pd.read_csv("weather/output_sources/temp_normals.csv")
-sunrise_sunset = pd.read_csv("weather/data_sources/sunrise_set_slc.csv", parse_dates=['time'])
+temps = pd.read_csv("raw_sources/daily_weather.csv", parse_dates=['date'])#.query("date >= '1995-01-01'")
+normals = pd.read_csv("output_sources/temp_daily_normals.csv")
+sunrise_sunset = pd.read_csv("raw_sources/sunrise_set_slc.csv", parse_dates=['time'])
 
 temps['day_of_year'] = temps['date'].apply(gen_DoY_index)
 temps['range'] = temps['max_temp'] - temps['min_temp']
@@ -154,7 +120,6 @@ temps =   temps.rename({
 temps['diurnal_temp_range'] = temps['max_temp'] - temps['min_temp']
 temps['high_rank'] = temps.groupby('day_of_year')['max_temp'].rank(ascending=False, method='min')
 temps['low_rank'] = temps.groupby('day_of_year')['min_temp'].rank(ascending=True, method='min')
-month_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 temps['month'] = pd.Categorical(temps['date'].dt.strftime('%b'), categories=month_order, ordered=True)
 temps['snow_season'] = np.where(temps['month'].isin(['Aug', 'Sep', 'Oct', 'Nov', 'Dec']), temps['year'], temps['year'] - 1)
 temps['snow_season'] = temps['snow_season'].astype(str) + '-' + (temps['snow_season'] + 1).astype(str)
@@ -244,7 +209,7 @@ monthly_map['rank'] = (
 )
 
 # Hourly Data
-hourly_temp = pd.read_csv("weather/data_sources/hourly_weather.csv", parse_dates=['timestamp'])
+hourly_temp = pd.read_csv("raw_sources/hourly_weather.csv", parse_dates=['timestamp'])
 hourly_temp['month'] = pd.Categorical(hourly_temp['timestamp'].dt.strftime('%b'), categories=month_order, ordered=True)
 hourly_temp['hour'] = hourly_temp['timestamp'].dt.hour
 hourly_temp['year'] = hourly_temp['timestamp'].dt.year
@@ -324,15 +289,16 @@ hourly_all_mean_season['avg_deviation'] = hourly_all_mean_season['metric_value']
 )
 
 # Precip Data
-precip = pd.read_csv('weather/output_sources/precip_table.csv', index_col=False, parse_dates=['date'])
+precip = pd.read_csv('output_sources/precip_table.csv', index_col=False, parse_dates=['date'])
 current_year = precip['year'].max()
 max_water_year = precip['water_year'].max()
 max_winter_year = precip['snow_season'].max()
+max_precip_date = precip['date'].max()
 precip['snow_day_of_year'] = precip.apply(lambda x: gen_DoY_index(x['date'], 'snow_season'), axis=1)
 precip['snow'].fillna(0, inplace=True)
 precip['rain'].fillna(0, inplace=True)
 
-ytd_normals = pd.read_csv('weather/output_sources/ytd_precip_normals.csv')
+ytd_normals = pd.read_csv('output_sources/precip_ytd_normals.csv')
 precip['month'] = pd.Categorical(precip['date'].dt.strftime('%b'), categories=month_order, ordered=True)
 precip_data_unpivot = pd.concat([
   precip\
@@ -372,7 +338,7 @@ precip_data_unpivot = (
 )
 
 monthly_norm = (
-  pd.read_csv('weather/output_sources/monthly_precip_normals.csv')
+  pd.read_csv('output_sources/precip_monthly_normals.csv')
   .rename({'norm_precip': 'precip', 'norm_snow': 'snow', 'norm_rain': 'rain', 'norm_precip_perc': 'precip_perc'}, axis=1)
   .melt(['month'], ['precip', 'snow', 'rain', 'precip_perc'], 'metric_name' ,'normal')
 )
@@ -399,7 +365,7 @@ precip_data_for_norm = precip_data_for_norm.assign(
   day_of_month=precip_data_for_norm['date'].dt.day, 
 )
 
-current_precip_month = precip_data_for_norm.query("(year_for_dash == current_year)")['month'].max()
+current_precip_month = max_precip_date.strftime("%b")
 
 mtd = (
   precip_data_for_norm.query("(year_type == 'calendar_year')")\
@@ -411,7 +377,7 @@ mtd = (
   .reset_index(drop=True)
   # .sort_values(by=['year_type', 'metric_name', 'calendar_year', 'date'])
 )
-mtd_avg = pd.read_csv('weather/output_sources/mtd_precip_normals.csv')
+mtd_avg = pd.read_csv('output_sources/precip_mtd_normals.csv')
 
 ytd = (
   precip_data_for_norm
