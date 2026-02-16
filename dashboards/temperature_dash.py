@@ -23,7 +23,7 @@ pio.renderers.default = "browser"
 
 # SHARED CONFIGS ---------------------
 temp_colors = [
-    '#3b4cc0', '#528ecb', "#8399a5", '#b5d5e6', 
+    '#3b4cc0', '#528ecb', "#84B2D9", '#b5d5e6', 
     '#e0e0e0',"#e0e0e0", "#e0e0e0", 
     '#f6bfa6', '#ea7b60', '#c63c36', '#962d20',
 ]
