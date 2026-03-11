@@ -126,6 +126,8 @@ temps['snow_season'] = temps['snow_season'].astype(str) + '-' + (temps['snow_sea
 temps['snow_day_of_year'] = temps.apply(lambda x: gen_DoY_index(x['date'], 'snow_season'), axis=1)
 
 temps_full = temps.merge(normals.drop(columns=['month'], axis=1), on='day_of_year', how='left', suffixes=('', '_y'))
+temps_full["max_available_rank"] = temps_full.groupby('day_of_year')['high_rank'].transform(lambda x: x.max())
+temps_full["min_available_rank"] = temps_full.groupby('day_of_year')['low_rank'].transform(lambda x: x.max())
 
 sunrise_sunset_clean = (
   sunrise_sunset[sunrise_sunset['time'].dt.year == 2024]
@@ -902,6 +904,47 @@ wind = (
   .reset_index()
 )
 
+# On This Day (records and normals)
+on_this_day_normals = pd.concat([
+  normals[['day_of_year', 'normal_high']].assign(metric='Normal High').rename({'normal_high':'value'}, axis=1),
+  normals[['day_of_year', 'normal_low']].assign(metric='Normal Low').rename({'normal_low':'value'}, axis=1)
+],  axis=0)
+on_this_day_normals['value'] = on_this_day_normals['value'].round(1).astype(str) + "°F"
+
+temps_full['temp_w_year'] = temps_full['max_temp'].astype(str) + " (" + temps_full['year'].astype(str) + ")"
+
+on_this_day_records = pd.concat([
+  temps_full.query("high_rank == 1")[['day_of_year', 'temp_w_year']].assign(metric='Record High'),
+  temps_full.query("low_rank == 1")[['day_of_year', 'temp_w_year']].assign(metric='Record Low'),
+], axis=0).rename({'temp_w_year':'value'}, axis=1)
+
+on_this_day_precip = (
+    precip
+    .groupby('day_of_year')
+    .agg(
+        max_rain=('rain', 'max'),
+        max_snow=('snow', 'max'),
+    )
+    .reset_index()
+    .melt(id_vars=['day_of_year'], value_vars=['max_rain', 'max_snow'], 
+          var_name='metric', value_name='value')
+)
+
+on_this_day_cloud = (
+  temps_full
+  .groupby('day_of_year')
+  .agg(
+    value=('cloud_cover', lambda x: str(round(x.mean(),1)) + "%"),
+  )
+  .reset_index()
+  .assign(metric='Average Cloud Cover')
+)
+
+on_this_day_table = (
+  pd.concat([on_this_day_normals, on_this_day_records, on_this_day_precip, on_this_day_cloud], axis=0)
+)
+
+
 # Precip dynamic colors
 non_snow_colors = {
   'year_lines': "rgb(144, 238, 144, 0.25)",
@@ -1369,8 +1412,8 @@ def update_temperature_chart(start_year):
   ]
   record_highs = recent[recent['high_rank'] == 1.0]
   record_lows = recent[recent['low_rank'] == 1.0]
-  high_min = recent[recent['low_rank'] == recent['low_rank'].max()]
-  low_max = recent[recent['high_rank'] == recent['high_rank'].max()]
+  high_min = recent[recent['low_rank'] == recent['min_available_rank']]
+  low_max = recent[recent['high_rank'] == recent['max_available_rank']]
   
   fig = go.Figure()
   # Total Temp
@@ -2542,4 +2585,3 @@ if __name__ == '__main__':
 # Most Snow
 
 # Trend view over time for min, max, cloud cover, precip
-
