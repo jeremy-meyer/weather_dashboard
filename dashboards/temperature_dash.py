@@ -34,7 +34,7 @@ precip_colors = [
 RECORDS_DEFAULT=15
 
 # Code to generate dashboard style tables
-def generic_data_table(df, id, page_size=10, clean_table=False, metric_value=None, decimal_places=2):
+def generic_data_table(df, id, page_size=10, clean_table=False, metric_value=None, decimal_places=2, font_size='16px', display_header=True, text_align='right'):
   if clean_table:
     df = (
       df
@@ -58,11 +58,14 @@ def generic_data_table(df, id, page_size=10, clean_table=False, metric_value=Non
               'backgroundColor': '#333333',  # Dark background for the header
               'color': 'white',             # White text for the header
               'fontWeight': 'bold',         # Bold text for the header
-          },
+              'fontSize': font_size,
+          } if display_header else {'display': 'none'},
           style_data={
               'backgroundColor': '#222222',  # Darker background for the data rows
               'color': 'white',             # White text for the data rows
-              'border': '1px solid #444'    # Gray border for the data rows
+              'border': '1px solid #444',    # Gray border for the data rows
+              'fontSize': font_size,
+              'textAlign': text_align,
           },
           style_data_conditional=[
           {
@@ -773,36 +776,6 @@ snow_percs['date'] = (
 snow_percs['percentile'] = snow_percs['index'].apply(lambda x: f"{int(x*100)}th Percentile")
 snow_percs = snow_percs[['date', 'percentile', 'metric']]
 
-
-dashboard_tables = {
-  "rain_day": generic_data_table(precip_records.query("record == 'rainiest day'"), id='rain_day' ,clean_table=True, metric_value='rain (in)'),
-  'rain_day_month': generic_data_table(precip_records.query(f"record == 'rainiest day ({curr_precip_month})'"), id='rain_day_month', clean_table=True, metric_value='rain (in)'),
-  'dry_day': generic_data_table(precip_records.query("record == 'consecutive_days_dry'"), id='dry_day', clean_table=True, metric_value='days'),
-  'snow_day' : generic_data_table(precip_records.query("record == 'snowiest day'"), id='snow_day', clean_table=True, metric_value='snow (in)'),
-  'snow_day_month' : generic_data_table(precip_records.query(f"record == 'snowiest day ({curr_precip_month})'"), id='snow_day_month', clean_table=True, metric_value='snow (in)'),
-  'snow_early' : generic_data_table(precip_records.query("record == 'earliest_snow'"), id='snow_early', clean_table=True, metric_value='snow (in)'),
-  'snow_late' : generic_data_table(precip_records.query("record == 'latest_snow'"), id='snow_late', clean_table=True, metric_value='snow (in)'),
-  'rain_month' : generic_data_table(precip_records_nodaily.query("record == 'rainiest_month'"), id='rain_month', clean_table=True, metric_value='rain (in)'),
-  'snow_month' : generic_data_table(precip_records_nodaily.query("record == 'snowiest_month'"), id='snow_month', clean_table=True, metric_value='snow (in)'),
-  'rain_year' : generic_data_table(precip_records_nodaily.query("record == 'most_rain_year'"), id='rain_year', clean_table=True, metric_value='rain (in)'),
-  'snow_year' : generic_data_table(precip_records_nodaily.query("record == 'most_snow_year'"), id='snow_year', clean_table=True, metric_value='snow (in)'),
-  'dry_month' : generic_data_table(precip_records_nodaily.query("record == 'driest_month'"), id='dry_month', clean_table=True, metric_value='precip (in)'),
-  'dry_snow' : generic_data_table(precip_records_nodaily.query("record == 'least_snow_year'"), id='dry_snow', clean_table=True, metric_value='snow (in)'),
-  'cold_day' : generic_data_table(temp_records.query("record == 'coldest_day'"), id='cold_day', clean_table=True, metric_value='temp (F)'),
-  'cold_day_month' : generic_data_table(temp_records.query(f"record == 'coldest_day ({curr_temp_month})'"), id=f'cold_day_month', clean_table=True, metric_value='temp (F)'),
-  'hot_day' : generic_data_table(temp_records.query("record == 'hottest_day'"), id='hot_day', clean_table=True, metric_value='temp (F)'),
-  'hot_day_month' : generic_data_table(temp_records.query(f"record == 'hottest_day ({curr_temp_month})'"), id=f'hot_day_month', clean_table=True, metric_value='temp (F)'),
-  'hottest_min' : generic_data_table(temp_records.query("record == 'hottest_minimum'"), id='hot_min', clean_table=True, metric_value='temp (F)'),
-  'coldest_max' : generic_data_table(temp_records.query("record == 'coldest_maximum'"), id='coldest_max', clean_table=True, metric_value='temp (F)'),
-  '100_deg' : generic_data_table(temp_records.query("record == '100_degree_days'"), id='100_deg', clean_table=True, metric_value='temp (F)'),
-  'first_freeze': generic_data_table(temp_records.query("record == 'first_freeze'"), id='first_freeze', clean_table=True, metric_value='temp (F)'),
-  'last_freeze': generic_data_table(temp_records.query("record == 'last_freeze'"), id='last_freeze', clean_table=True, metric_value='temp (F)'),
-  'first_freeze_perc': generic_data_table(freeze_percs.query("metric == 'first_freeze'")[['date', 'percentile']], id='first_freeze_perc', clean_table=False, metric_value='date'),
-  'last_freeze_perc': generic_data_table(freeze_percs.query("metric == 'last_freeze'")[['date', 'percentile']], id='last_freeze_perc', clean_table=False, metric_value='date'),
-  'first_snow_perc': generic_data_table(snow_percs.query("metric == 'first_snow'")[['date', 'percentile']], id='first_snow_perc', clean_table=False, metric_value='date'),
-  'last_snow_perc': generic_data_table(snow_percs.query("metric == 'last_snow'")[['date', 'percentile']], id='last_snow_perc', clean_table=False, metric_value='date'),
-}
-
 # Temp year records
 temp_year_records = (
   temps_full
@@ -911,7 +884,7 @@ on_this_day_normals = pd.concat([
 ],  axis=0)
 on_this_day_normals['value'] = on_this_day_normals['value'].round(1).astype(str) + "°F"
 
-temps_full['temp_w_year'] = temps_full['max_temp'].astype(str) + " (" + temps_full['year'].astype(str) + ")"
+temps_full['temp_w_year'] = temps_full['max_temp'].astype(str) + "°F (" + temps_full['year'].astype(str) + ")"
 
 on_this_day_records = pd.concat([
   temps_full.query("high_rank == 1")[['day_of_year', 'temp_w_year']].assign(metric='Record High'),
@@ -925,16 +898,18 @@ on_this_day_precip = (
         max_rain=('rain', 'max'),
         max_snow=('snow', 'max'),
     )
+    .rename({'max_rain':'Most Rainfall', 'max_snow':'Most Snowfall'}, axis=1)
     .reset_index()
-    .melt(id_vars=['day_of_year'], value_vars=['max_rain', 'max_snow'], 
+    .melt(id_vars=['day_of_year'], value_vars=['Most Rainfall', 'Most Snowfall'], 
           var_name='metric', value_name='value')
 )
+on_this_day_precip['value'] = on_this_day_precip['value'].round(2).astype(str) + " in"
 
 on_this_day_cloud = (
   temps_full
   .groupby('day_of_year')
   .agg(
-    value=('cloud_cover', lambda x: str(round(x.mean(),1)) + "%"),
+    value=('cloud_cover', lambda x: str(round(x.mean(),1)) + " %"),
   )
   .reset_index()
   .assign(metric='Average Cloud Cover')
@@ -942,7 +917,39 @@ on_this_day_cloud = (
 
 on_this_day_table = (
   pd.concat([on_this_day_normals, on_this_day_records, on_this_day_precip, on_this_day_cloud], axis=0)
+  [['metric', 'value', 'day_of_year']]
 )
+
+
+dashboard_tables = {
+  "rain_day": generic_data_table(precip_records.query("record == 'rainiest day'"), id='rain_day' ,clean_table=True, metric_value='rain (in)'),
+  'rain_day_month': generic_data_table(precip_records.query(f"record == 'rainiest day ({curr_precip_month})'"), id='rain_day_month', clean_table=True, metric_value='rain (in)'),
+  'dry_day': generic_data_table(precip_records.query("record == 'consecutive_days_dry'"), id='dry_day', clean_table=True, metric_value='days'),
+  'snow_day' : generic_data_table(precip_records.query("record == 'snowiest day'"), id='snow_day', clean_table=True, metric_value='snow (in)'),
+  'snow_day_month' : generic_data_table(precip_records.query(f"record == 'snowiest day ({curr_precip_month})'"), id='snow_day_month', clean_table=True, metric_value='snow (in)'),
+  'snow_early' : generic_data_table(precip_records.query("record == 'earliest_snow'"), id='snow_early', clean_table=True, metric_value='snow (in)'),
+  'snow_late' : generic_data_table(precip_records.query("record == 'latest_snow'"), id='snow_late', clean_table=True, metric_value='snow (in)'),
+  'rain_month' : generic_data_table(precip_records_nodaily.query("record == 'rainiest_month'"), id='rain_month', clean_table=True, metric_value='rain (in)'),
+  'snow_month' : generic_data_table(precip_records_nodaily.query("record == 'snowiest_month'"), id='snow_month', clean_table=True, metric_value='snow (in)'),
+  'rain_year' : generic_data_table(precip_records_nodaily.query("record == 'most_rain_year'"), id='rain_year', clean_table=True, metric_value='rain (in)'),
+  'snow_year' : generic_data_table(precip_records_nodaily.query("record == 'most_snow_year'"), id='snow_year', clean_table=True, metric_value='snow (in)'),
+  'dry_month' : generic_data_table(precip_records_nodaily.query("record == 'driest_month'"), id='dry_month', clean_table=True, metric_value='precip (in)'),
+  'dry_snow' : generic_data_table(precip_records_nodaily.query("record == 'least_snow_year'"), id='dry_snow', clean_table=True, metric_value='snow (in)'),
+  'cold_day' : generic_data_table(temp_records.query("record == 'coldest_day'"), id='cold_day', clean_table=True, metric_value='temp (F)'),
+  'cold_day_month' : generic_data_table(temp_records.query(f"record == 'coldest_day ({curr_temp_month})'"), id=f'cold_day_month', clean_table=True, metric_value='temp (F)'),
+  'hot_day' : generic_data_table(temp_records.query("record == 'hottest_day'"), id='hot_day', clean_table=True, metric_value='temp (F)'),
+  'hot_day_month' : generic_data_table(temp_records.query(f"record == 'hottest_day ({curr_temp_month})'"), id=f'hot_day_month', clean_table=True, metric_value='temp (F)'),
+  'hottest_min' : generic_data_table(temp_records.query("record == 'hottest_minimum'"), id='hot_min', clean_table=True, metric_value='temp (F)'),
+  'coldest_max' : generic_data_table(temp_records.query("record == 'coldest_maximum'"), id='coldest_max', clean_table=True, metric_value='temp (F)'),
+  '100_deg' : generic_data_table(temp_records.query("record == '100_degree_days'"), id='100_deg', clean_table=True, metric_value='temp (F)'),
+  'first_freeze': generic_data_table(temp_records.query("record == 'first_freeze'"), id='first_freeze', clean_table=True, metric_value='temp (F)'),
+  'last_freeze': generic_data_table(temp_records.query("record == 'last_freeze'"), id='last_freeze', clean_table=True, metric_value='temp (F)'),
+  'first_freeze_perc': generic_data_table(freeze_percs.query("metric == 'first_freeze'")[['date', 'percentile']], id='first_freeze_perc', clean_table=False, metric_value='date'),
+  'last_freeze_perc': generic_data_table(freeze_percs.query("metric == 'last_freeze'")[['date', 'percentile']], id='last_freeze_perc', clean_table=False, metric_value='date'),
+  'first_snow_perc': generic_data_table(snow_percs.query("metric == 'first_snow'")[['date', 'percentile']], id='first_snow_perc', clean_table=False, metric_value='date'),
+  'last_snow_perc': generic_data_table(snow_percs.query("metric == 'last_snow'")[['date', 'percentile']], id='last_snow_perc', clean_table=False, metric_value='date'),
+  'on_this_day_tab': generic_data_table(on_this_day_table.drop(columns=['day_of_year'], axis=1), id='on_this_day_tab', clean_table=False, metric_value='value', font_size='24px', display_header=False, text_align='left'),
+}
 
 
 # Precip dynamic colors
@@ -1180,31 +1187,27 @@ app.layout = dbc.Container([
       ),
       dbc.Row([
         dbc.Col([
+          html.Div(children="Daily Stats Summary", style={'fontSize': 24}),
+          dashboard_tables['on_this_day_tab'],
+        ], width=3),
+        dbc.Col([
           html.Div(children="Min Temperature", style={'fontSize': 24}),
           dbc_row_col(dcc.Graph(figure={}, id='on_this_day_min_temp')),
-        ], width=4),
-        dbc.Col([
           html.Div(children="Max Temperature", style={'fontSize': 24}),
           dbc_row_col(dcc.Graph(figure={}, id='on_this_day_max_temp')),
-        ], width=4),
-        dbc.Col([
-          html.Div(children="Cloud Cover", style={'fontSize': 24}),
-          dbc_row_col(dcc.Graph(figure={}, id='on_this_day_cloud_cover')),
-        ], width=4),
-      ]),
-      dbc.Row([
+        ], width=3),
         dbc.Col([
           html.Div(children="Rain", style={'fontSize': 24}),
           dbc_row_col(dcc.Graph(figure={}, id='on_this_day_rain')),
-        ], width=4),
-        dbc.Col([
           html.Div(children="Snow", style={'fontSize': 24}),
           dbc_row_col(dcc.Graph(figure={}, id='on_this_day_snow')),
-        ], width=4),
+        ], width=3),
         dbc.Col([
+          html.Div(children="Cloud Cover", style={'fontSize': 24}),
+          dbc_row_col(dcc.Graph(figure={}, id='on_this_day_cloud_cover')),
           html.Div(children="Dew Point", style={'fontSize': 24}),
-          dbc_row_col(dcc.Graph(figure={}, id='on_this_day_dew_point')),
-        ], width=4),         
+          dbc_row_col(dcc.Graph(figure={}, id='on_this_day_dew_point')),         
+        ], width=3),
       ]),
       dbc.Row([
         dbc.Col([
@@ -2569,6 +2572,21 @@ def on_this_day_precip_trend(date_value):
   fig.update_layout(xaxis_title="Year", yaxis_title=f"{date_value} Precipitation", bargap=0.15)
 
   return fig
+
+
+@callback(
+    Output(component_id='on_this_day_tab', component_property='data'),
+    Input(component_id='datepicker_day_of_year', component_property='value'),
+)
+def update_on_this_day_table(date_value):
+  date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
+  day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
+  
+  filtered_df = (
+    on_this_day_table
+    .query(f"day_of_year == {day_of_year}").drop(columns=['day_of_year'], axis=1)
+  )
+  return filtered_df.to_dict("records")
 
 # Run the app
 if __name__ == '__main__':
