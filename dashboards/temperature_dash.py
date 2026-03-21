@@ -884,12 +884,15 @@ on_this_day_normals = pd.concat([
 ],  axis=0)
 on_this_day_normals['value'] = on_this_day_normals['value'].round(1).astype(str) + "°F"
 
-temps_full['temp_w_year'] = temps_full['max_temp'].astype(str) + "°F (" + temps_full['year'].astype(str) + ")"
+temps_full['temp_w_year_max'] = temps_full['max_temp'].astype(str) + "°F (" + temps_full['year'].astype(str) + ")"
+temps_full['temp_w_year_min'] = temps_full['min_temp'].astype(str) + "°F (" + temps_full['year'].astype(str) + ")"
 
 on_this_day_records = pd.concat([
-  temps_full.query("high_rank == 1")[['day_of_year', 'temp_w_year']].assign(metric='Record High'),
-  temps_full.query("low_rank == 1")[['day_of_year', 'temp_w_year']].assign(metric='Record Low'),
-], axis=0).rename({'temp_w_year':'value'}, axis=1)
+  temps_full.query("high_rank == 1")[['day_of_year', 'temp_w_year_max']].assign(metric='Record High').rename({'temp_w_year_max':'value'}, axis=1),
+  temps_full.query("low_rank == 1")[['day_of_year', 'temp_w_year_min']].assign(metric='Record Low').rename({'temp_w_year_min':'value'}, axis=1),
+  temps_full.query("high_rank == min_available_rank")[['day_of_year', 'temp_w_year_max']].assign(metric='Coldest High').rename({'temp_w_year_max':'value'}, axis=1),
+  temps_full.query("low_rank == min_available_rank")[['day_of_year', 'temp_w_year_min']].assign(metric='Warmest Low').rename({'temp_w_year_min':'value'}, axis=1),
+], axis=0)
 
 on_this_day_precip = (
     precip
@@ -909,15 +912,20 @@ on_this_day_cloud = (
   temps_full
   .groupby('day_of_year')
   .agg(
-    value=('cloud_cover', lambda x: str(round(x.mean(),1)) + " %"),
+    avg_cloud=('cloud_cover', lambda x: str(round(x.mean(),1)) + " %"),
+    avg_humidity=('Relative Humidity', lambda x: str(round(x.mean(),1)) + " %"),
+    avg_dew_point=('dew_point', lambda x: str(round(x.mean(),1)) + " °F"),
   )
+  .rename({'avg_cloud':'Average Cloud Cover', 'avg_humidity':'Average Humidity', 'avg_dew_point':'Average Dew Point'}, axis=1)
   .reset_index()
-  .assign(metric='Average Cloud Cover')
+  .melt(id_vars=['day_of_year'], value_vars=['Average Cloud Cover', 'Average Humidity', 'Average Dew Point'], 
+        var_name='metric', value_name='value')
 )
 
 on_this_day_table = (
   pd.concat([on_this_day_normals, on_this_day_records, on_this_day_precip, on_this_day_cloud], axis=0)
   [['metric', 'value', 'day_of_year']]
+  # .query("day_of_year == 1.0") # TEST
 )
 
 
@@ -948,7 +956,7 @@ dashboard_tables = {
   'last_freeze_perc': generic_data_table(freeze_percs.query("metric == 'last_freeze'")[['date', 'percentile']], id='last_freeze_perc', clean_table=False, metric_value='date'),
   'first_snow_perc': generic_data_table(snow_percs.query("metric == 'first_snow'")[['date', 'percentile']], id='first_snow_perc', clean_table=False, metric_value='date'),
   'last_snow_perc': generic_data_table(snow_percs.query("metric == 'last_snow'")[['date', 'percentile']], id='last_snow_perc', clean_table=False, metric_value='date'),
-  'on_this_day_tab': generic_data_table(on_this_day_table.drop(columns=['day_of_year'], axis=1), id='on_this_day_tab', clean_table=False, metric_value='value', font_size='24px', display_header=False, text_align='left'),
+  'on_this_day_tab': generic_data_table(on_this_day_table.drop(columns=['day_of_year'], axis=1), id='on_this_day_tab', page_size=15, clean_table=False, metric_value='value', font_size='24px', display_header=False, text_align='left'),
 }
 
 
@@ -1183,6 +1191,15 @@ app.layout = dbc.Container([
           value=date.today().strftime('%b %d'),
           style={"color": "#000000"},
           id='datepicker_day_of_year',
+        ), width=6
+      ),
+      dbc_row_col(html.Div("Select Chart View:")),
+      dbc_row_col(
+        dcc.Dropdown(
+          options=['Histogram', 'Cumulative Percentile'],
+          value='Histogram',
+          style={"color": "#000000"},
+          id='on_this_day_metric_view',
         ), width=6
       ),
       dbc.Row([
@@ -2403,71 +2420,113 @@ def wind_dir_graph(months):
   return fig
 
 # On This day view
+
+def generate_cdf(df, metric):
+  cumulative_df = (
+    df
+    .groupby(metric)
+    .agg(count=(metric, 'count'))
+    .reset_index()
+    .sort_values(metric)
+  )
+  cumulative_df['cumulative_perc'] = cumulative_df['count'].cumsum() / cumulative_df['count'].sum() * 100
+  return cumulative_df
+
+
 @callback(
     Output(component_id='on_this_day_min_temp', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_min_temp(date_value):
+def on_this_day_min_temp(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
   df = temps.query(f"day_of_year == {day_of_year}")
 
-  fig = px.histogram(df, x="min_temp", histnorm='percent')
-  fig.update_layout(xaxis_title="Minimum Temperature", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="min_temp", histnorm='percent')
+    fig.update_layout(xaxis_title="Minimum Temperature", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "min_temp")
+    fig = px.line(cdf_df, x="min_temp", y="cumulative_perc")
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Minimum Temperature", yaxis_title="Cumulative Percentile")
   return fig
 
 
 @callback(
     Output(component_id='on_this_day_max_temp', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_max_temp(date_value):
+def on_this_day_max_temp(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
   df = temps.query(f"day_of_year == {day_of_year}")
 
-  fig = px.histogram(df, x="max_temp", color_discrete_sequence=['firebrick'], histnorm='percent')
-  fig.update_layout(xaxis_title="Maximum Temperature", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="max_temp", color_discrete_sequence=['firebrick'], histnorm='percent')
+    fig.update_layout(xaxis_title="Maximum Temperature", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "max_temp")
+    fig = px.line(cdf_df, x="max_temp", y="cumulative_perc", color_discrete_sequence=['firebrick'])
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Maximum Temperature", yaxis_title="Cumulative Percentile")
   return fig
 
 @callback(
     Output(component_id='on_this_day_cloud_cover', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_cloud_cover(date_value):
+def on_this_day_cloud_cover(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
   df = temps.query(f"day_of_year == {day_of_year}")
 
-  fig = px.histogram(df, x="cloud_cover", color_discrete_sequence=['cornflowerblue'], histnorm='percent')
-  fig.update_traces(xbins={'start': 0, 'end': 100, 'size': 10})
-  fig.update_layout(xaxis_title="Cloud Cover", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="cloud_cover", color_discrete_sequence=['cornflowerblue'], histnorm='percent')
+    fig.update_traces(xbins={'start': 0, 'end': 100, 'size': 10})
+    fig.update_layout(xaxis_title="Cloud Cover", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "cloud_cover")
+    fig = px.line(cdf_df, x="cloud_cover", y="cumulative_perc", color_discrete_sequence=['cornflowerblue'])
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Cloud Cover", yaxis_title="Cumulative Percentile")
 
   return fig
 
 @callback(
     Output(component_id='on_this_day_dew_point', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_dew_point(date_value):
+def on_this_day_dew_point(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
   df = temps.query(f"day_of_year == {day_of_year}")
 
-  fig = px.histogram(df, x="dew_point", color_discrete_sequence=['darkgreen'], histnorm='percent')
-  fig.update_layout(xaxis_title="Dew Point", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="dew_point", color_discrete_sequence=['darkgreen'], histnorm='percent')
+    fig.update_layout(xaxis_title="Dew Point", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "dew_point")
+    fig = px.line(cdf_df, x="dew_point", y="cumulative_perc", color_discrete_sequence=['darkgreen'])
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Dew Point", yaxis_title="Cumulative Percentile")
 
   return fig
 
 @callback(
     Output(component_id='on_this_day_snow', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_snow(date_value):
+def on_this_day_snow(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
@@ -2479,11 +2538,18 @@ def on_this_day_snow(date_value):
     snow_labels,
     snow_labels[-1],
   )
+  df['snow_unbinned'] = df['snow']
   df['snow'] = df['snow'].apply(snow_bins)
 
-  fig = px.histogram(df, x="snow", color_discrete_sequence=['cyan'], histnorm='percent')
-  fig.update_xaxes(categoryorder='array', categoryarray=snow_labels)
-  fig.update_layout(xaxis_title="Precipitation", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="snow", color_discrete_sequence=['cyan'], histnorm='percent')
+    fig.update_xaxes(categoryorder='array', categoryarray=snow_labels)
+    fig.update_layout(xaxis_title="Precipitation", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "snow_unbinned")
+    fig = px.line(cdf_df, x="snow_unbinned", y="cumulative_perc", color_discrete_sequence=['cyan'])
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Precipitation", yaxis_title="Cumulative Percentile")
 
   return fig
 
@@ -2491,8 +2557,9 @@ def on_this_day_snow(date_value):
 @callback(
     Output(component_id='on_this_day_rain', component_property='figure'),
     Input(component_id='datepicker_day_of_year', component_property='value'),
+    Input(component_id='on_this_day_metric_view', component_property='value'),
 )
-def on_this_day_rain(date_value):
+def on_this_day_rain(date_value, metric_view):
 
   date_formatted = datetime.strptime(date_value+" 2024", "%b %d %Y")
   day_of_year = gen_DoY_index(pd.to_datetime(date_formatted))
@@ -2504,11 +2571,18 @@ def on_this_day_rain(date_value):
     rain_labels,
     rain_labels[-1],
   )
+  df['rain_unbinned'] = df['rain']
   df['rain'] = df['rain'].apply(rain_bins)
 
-  fig = px.histogram(df, x="rain", color_discrete_sequence=['limegreen'], histnorm='percent')
-  fig.update_xaxes(categoryorder='array', categoryarray=rain_labels)
-  fig.update_layout(xaxis_title="Precipitation", yaxis_title="Frequency", bargap=0.1)
+  if metric_view == 'Histogram':
+    fig = px.histogram(df, x="rain", color_discrete_sequence=['limegreen'], histnorm='percent')
+    fig.update_xaxes(categoryorder='array', categoryarray=rain_labels)
+    fig.update_layout(xaxis_title="Precipitation", yaxis_title="Frequency", bargap=0.1)
+  elif metric_view == 'Cumulative Percentile':
+    cdf_df = generate_cdf(df, "rain_unbinned")
+    fig = px.line(cdf_df, x="rain_unbinned", y="cumulative_perc", color_discrete_sequence=['limegreen'])
+    fig.update_traces(mode='lines', line_shape='hv') 
+    fig.update_layout(xaxis_title="Precipitation", yaxis_title="Cumulative Percentile")
 
   return fig
 
@@ -2591,15 +2665,3 @@ def update_on_this_day_table(date_value):
 # Run the app
 if __name__ == '__main__':
     app.run(debug=True, port=8053)
-
-
-# On this day view
-# Normal High
-# Normal Low
-# Record High (year)
-# Record Low (year)
-# % cloud cover
-# Most Rain
-# Most Snow
-
-# Trend view over time for min, max, cloud cover, precip
