@@ -1,3 +1,5 @@
+from statistics import mode
+
 from dash import Dash, html, dash_table, dcc, callback, Output, Input, html
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -823,10 +825,30 @@ yearly_trend_metrics = pd.concat([
   temp_year_records[['metric_name', 'year', 'total', 'rank']],
   additional_yearly_rank[['metric_name', 'year', 'total', 'rank']],
 ])
+
 yearly_trend_metrics['year'] = yearly_trend_metrics['year'].astype('int')
 min_trend_year = yearly_trend_metrics["year"].min()
 max_trend_year = yearly_trend_metrics["year"].max()-1 # exclude partial year
 yearly_trend_metrics = yearly_trend_metrics.query(f"year <= {max_trend_year}")
+
+monthly_trend_metrics = pd.concat([
+  (
+    monthly_map
+    .query("month != 'Year'")
+    .rename({'mean': 'total', "metric": 'metric_name'}, axis=1)
+    [['metric_name', 'year', 'total', 'rank', 'month']]
+  ),
+  (
+    precip_rank
+    .query("month != 'Year'")
+    .query("year_type in ('water_year')")
+    .rename({'year_for_dash': 'year'}, axis=1)
+    [['metric_name', 'year', 'total', 'rank', 'month']]
+  ),
+  # temp_year_records[['metric_name', 'year', 'total', 'rank']],
+  # additional_yearly_rank[['metric_name', 'year', 'total', 'rank']],
+]).dropna()
+
 
 records_dash_disagg = (
   temps[['date','year','day_of_year','min_temp', 'max_temp', 'avg_temp', 'dew_point', 'wind_speed','wind_chill', 'pressure', 'heat_index', 'diurnal_temp_range']]
@@ -2364,6 +2386,29 @@ def yearly_scatter(metric, start_year):
     yaxis_title=yearly_trend_labels[metric],
   )
   return fig
+
+
+# @callback(
+#     Output(component_id='monthly_trend', component_property='figure'),
+#     Input(component_id='yearly_trend_dropdown', component_property='value'),
+#     Input(component_id='yearly_trend_slider', component_property='value'),
+# )
+# def monthly_trend(metric, start_year):
+#   to_display = monthly_trend_metrics.query(f"metric_name == '{metric}'").query(f"year >= {start_year}").copy()
+#   to_display['year'] = pd.to_numeric(to_display['year'], errors='coerce')
+  
+#   # Fit the model
+#   # Add month as a categorical variable
+#   month_dummies = 1*pd.get_dummies(to_display['month'], prefix='month').drop('month_Year', axis=1)
+#   # Add month:year interaction terms
+#   for col in month_dummies.columns:
+#       month_dummies[f"{col}:year"] = month_dummies[col] * (to_display['year'] - to_display['year'].min())
+#   # Concatenate the month dummies and interaction terms with the X matrix
+#   X = month_dummies
+#   y = to_display['total']
+#   model = sm.OLS(y, X)
+#   model_res = model.fit()
+#   lm_fit = model_res.predict(X)
 
 
 @callback(
