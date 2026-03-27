@@ -848,6 +848,7 @@ monthly_trend_metrics = pd.concat([
   # temp_year_records[['metric_name', 'year', 'total', 'rank']],
   # additional_yearly_rank[['metric_name', 'year', 'total', 'rank']],
 ]).dropna()
+monthly_trend_metrics['year'] = monthly_trend_metrics['year'].astype('int')
 
 
 records_dash_disagg = (
@@ -1436,7 +1437,9 @@ app.layout = dbc.Container([
       dbc.Row([
         dbc.Col(dcc.Graph(figure={}, id='records_yearly'), width=8),
         dbc.Col(dcc.Graph(figure={}, id='yearly_trend_from_norm'), width=4),
-      ]),      
+      ]),
+      dbc_row_col(html.Div("Monthly Trend (change per decade)", style={'fontSize': 24})),
+      dbc_row_col(dcc.Graph(figure={}, id='monthly_trend'))  
     ]),
   ]),
 ], fluid=True)
@@ -2388,27 +2391,66 @@ def yearly_scatter(metric, start_year):
   return fig
 
 
-# @callback(
-#     Output(component_id='monthly_trend', component_property='figure'),
-#     Input(component_id='yearly_trend_dropdown', component_property='value'),
-#     Input(component_id='yearly_trend_slider', component_property='value'),
-# )
-# def monthly_trend(metric, start_year):
-#   to_display = monthly_trend_metrics.query(f"metric_name == '{metric}'").query(f"year >= {start_year}").copy()
-#   to_display['year'] = pd.to_numeric(to_display['year'], errors='coerce')
+@callback(
+    Output(component_id='monthly_trend', component_property='figure'),
+    Input(component_id='yearly_trend_dropdown', component_property='value'),
+    Input(component_id='yearly_trend_slider', component_property='value'),
+)
+def monthly_trend(metric, start_year):
+  to_display = monthly_trend_metrics.query(f"metric_name == '{metric}'").query(f"year >= {start_year}").query(f"month != 'Year'").copy()
+  to_display['year'] = pd.to_numeric(to_display['year'], errors='coerce')
   
-#   # Fit the model
-#   # Add month as a categorical variable
-#   month_dummies = 1*pd.get_dummies(to_display['month'], prefix='month').drop('month_Year', axis=1)
-#   # Add month:year interaction terms
-#   for col in month_dummies.columns:
-#       month_dummies[f"{col}:year"] = month_dummies[col] * (to_display['year'] - to_display['year'].min())
-#   # Concatenate the month dummies and interaction terms with the X matrix
-#   X = month_dummies
-#   y = to_display['total']
-#   model = sm.OLS(y, X)
-#   model_res = model.fit()
-#   lm_fit = model_res.predict(X)
+  # Fit the model
+  # Add month as a categorical variable
+  month_dummies = 1*pd.get_dummies(to_display['month'], prefix='month')
+  # Add month:year interaction terms
+  for col in month_dummies.columns:
+      month_dummies[f"{col}:year"] = month_dummies[col] * (to_display['year'] - to_display['year'].min())
+  # Concatenate the month dummies and interaction terms with the X matrix
+  X = month_dummies
+  y = to_display['total']
+  model = sm.OLS(y, X)
+  model_res = model.fit()
+
+  # Make histogram chart of all the interaction effects to see which months have the biggest changes over time
+  interaction_cols = [col for col in month_dummies.columns if ':year' in col]
+
+  # Create a DataFrame for the interaction effects
+  interaction_df = pd.DataFrame({
+      'month': [col.split(':')[0].replace('month_', '') for col in interaction_cols],
+      'change_per_decade': 10*np.round(model_res.params[interaction_cols].values, 6)
+  })
+
+  # Create the first chart
+  chart1 = px.bar(interaction_df, x='month', y="change_per_decade",
+                  labels={'change_per_decade': 'Change Per Decade'},
+                  text='change_per_decade', color_discrete_sequence=['firebrick'])
+  chart1.update_traces(texttemplate='%{text:.3f}', textposition='outside')
+
+  # Create the second chart (example: scatter plot)
+  chart2 = px.scatter(to_display, x='year', y='total', color='month')
+  chart2.add_traces(px.line(to_display, x='year', y=model_res.fittedvalues, color=to_display['month']).data)
+
+  # Set default legend items selected
+  for trace in chart2.data:
+      if trace.name not in ['Jan', 'Jul']:
+          trace.visible = 'legendonly'
+
+  # Combine the two charts into one figure
+  fig = make_subplots(rows=1, cols=2)
+
+  # Add traces from the first chart
+  for trace in chart1.data:
+      fig.add_trace(trace, row=1, col=1)
+
+  # Add traces from the second chart
+  for trace in chart2.data:
+      fig.add_trace(trace, row=1, col=2)
+
+  # Update layout
+  fig.update_layout(showlegend=True, height=700)
+
+  return fig
 
 
 @callback(
