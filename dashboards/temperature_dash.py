@@ -799,6 +799,26 @@ temp_year_records = (
   .query(f"year < {max_date.year}")
 )
 
+temp_year_month_records = (
+  temps_full
+  .assign(
+    degree_100=lambda x: (x.max_temp >= 100)*1,
+    frost_days=lambda x: (x.min_temp <= 32)*1,
+  )
+  .groupby(['year', 'month'])
+  .agg(
+    full_max=('max_temp', 'max'),
+    full_min=('min_temp', 'min'),
+    days_100=('degree_100', 'sum'),
+    frost_days=('frost_days', 'sum'),
+    diurnal_temp_range=('diurnal_temp_range', 'mean'),
+  )
+  .reset_index()
+  .melt(['year', 'month'], ['full_max', 'full_min', 'days_100', 'frost_days', 'diurnal_temp_range'], 'metric_name', 'total')
+  .assign(rank=lambda x: x.groupby(['metric_name', 'month'])['total'].rank(method='min', ascending=False))
+  .dropna()
+)
+
 # Compute additional metrics from temp table
 additional_yearly_metrics = ['cloud_cover', 'pressure', 'dew_point', 'wind_speed']
 additional_yearly_rank = (
@@ -806,6 +826,13 @@ additional_yearly_rank = (
   .groupby('year').mean().reset_index()
   .melt(['year'], additional_yearly_metrics, 'metric_name', 'total')
   .assign(rank=lambda x: x.groupby('metric_name')['total'].rank(method='min', ascending=False))
+)
+
+additional_yearly_month_rank = (
+  temps[['year', 'month', *additional_yearly_metrics]]
+  .groupby(['year', 'month']).mean().reset_index()
+  .melt(['year', 'month'], additional_yearly_metrics, 'metric_name', 'total')
+  .assign(rank=lambda x: x.groupby(['metric_name', 'month'])['total'].rank(method='min', ascending=False))
 )
 
 yearly_trend_metrics = pd.concat([
@@ -845,8 +872,8 @@ monthly_trend_metrics = pd.concat([
     .rename({'year_for_dash': 'year'}, axis=1)
     [['metric_name', 'year', 'total', 'rank', 'month']]
   ),
-  # temp_year_records[['metric_name', 'year', 'total', 'rank']],
-  # additional_yearly_rank[['metric_name', 'year', 'total', 'rank']],
+  temp_year_month_records[['metric_name', 'year', 'total', 'rank', 'month']],
+  additional_yearly_month_rank[['metric_name', 'year', 'total', 'rank', 'month']],
 ]).dropna()
 monthly_trend_metrics['year'] = monthly_trend_metrics['year'].astype('int')
 
@@ -1421,6 +1448,16 @@ app.layout = dbc.Container([
         dbc.Col(dcc.Graph(figure={}, id='yearly_trend'), width=8),
         dbc.Col(dcc.Graph(figure={}, id='yearly_scatter'), width=4),
       ]),
+      dbc.Row([
+        dbc.Col(html.Div("Monthly Change (per decade)", style={'fontSize': 24}), width=8),
+        dbc.Col(html.Div("Yearly departure from normal", style={'fontSize': 24}), width=4),
+      ]),
+      dbc.Row([
+        dbc.Col(dcc.Graph(figure={}, id='monthly_trend'), width=8),
+        dbc.Col(dcc.Graph(figure={}, id='yearly_trend_from_norm'), width=4),
+      ]),
+      
+      dbc_row_col(html.Div("Number of Daily Records", style={'fontSize': 24})),
       dbc_row_col(html.Div("Select records metric:")),
       dbc_row_col(
         dcc.Dropdown(
@@ -1428,18 +1465,9 @@ app.layout = dbc.Container([
           value='avg_temp',
           style={"color": "#000000"},
           id='records_yearly_dropdown',
-        ), width=8
+        )
       ),
-      dbc.Row([
-        dbc.Col(html.Div("Number of Daily Records", style={'fontSize': 24}), width=8),
-        dbc.Col(html.Div("Departure from 30yr normal", style={'fontSize': 24}), width=4),
-      ]),
-      dbc.Row([
-        dbc.Col(dcc.Graph(figure={}, id='records_yearly'), width=8),
-        dbc.Col(dcc.Graph(figure={}, id='yearly_trend_from_norm'), width=4),
-      ]),
-      dbc_row_col(html.Div("Monthly Trend (change per decade)", style={'fontSize': 24})),
-      dbc_row_col(dcc.Graph(figure={}, id='monthly_trend'))  
+      dbc_row_col(dcc.Graph(figure={}, id='records_yearly')),
     ]),
   ]),
 ], fluid=True)
@@ -2048,18 +2076,6 @@ def precip_ytd_chart(calendar_type, metric):
           showlegend=False
       )
   ])
-  # fig.add_traces([
-  #     go.Scatter(
-  #         x=list(ytd_avg['day_of_year_dash']) + list(ytd_avg['day_of_year_dash'])[::-1],
-  #         y=list(ytd_avg['p90_precip_ytd']) + list(ytd_avg['p10_precip_ytd'])[::-1],
-  #         fill='toself',
-  #         fillcolor='rgba(0, 150, 0, 0.1)',
-  #         line=dict(color='rgba(255,255,255,0)'),
-  #         hoverinfo="skip",
-  #         name='10th-90th Percentile',
-  #         showlegend=False
-  #   )
-  # ])
   fig.update_layout(
     height=800,
     xaxis=dict(
@@ -2325,7 +2341,7 @@ def yearly_trend_from_norm(metric, start_year):
       line=dict(color='white', width=1.5, dash='dash'),  # Customize the line color, width, and style
   )
   fig.update_layout(
-    height=600,
+    height=700,
     margin=dict(l=20, r=20, t=20, b=20),
     xaxis_title='Year',
     yaxis_title=yearly_trend_labels[metric],
@@ -2399,10 +2415,13 @@ def yearly_scatter(metric, start_year):
 def monthly_trend(metric, start_year):
   to_display = monthly_trend_metrics.query(f"metric_name == '{metric}'").query(f"year >= {start_year}").query(f"month != 'Year'").copy()
   to_display['year'] = pd.to_numeric(to_display['year'], errors='coerce')
+  to_display['month'] = pd.Categorical(to_display['month'], categories=month_order, ordered=True)
   
   # Fit the model
   # Add month as a categorical variable
   month_dummies = 1*pd.get_dummies(to_display['month'], prefix='month')
+  if 'month_Year' in month_dummies.columns:
+    month_dummies = month_dummies.drop(columns=['month_Year'])
   # Add month:year interaction terms
   for col in month_dummies.columns:
       month_dummies[f"{col}:year"] = month_dummies[col] * (to_display['year'] - to_display['year'].min())
@@ -2481,6 +2500,7 @@ def records_dash(metric):
     margin=dict(l=20, r=20, t=20, b=20),
     xaxis_title='Year',
     yaxis_title=records_dash_labels[metric] + " Days",
+    height=600,
   )
   return fig
 
