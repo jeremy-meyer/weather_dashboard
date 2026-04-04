@@ -90,6 +90,23 @@ def generic_data_table(df, id, page_size=10, clean_table=False, metric_value=Non
     ])
   )
 
+units = {
+  'max_temp': '°F',
+  'min_temp': '°F',
+  'avg_temp': '°F',
+  'diurnal_temp_range': '°F',
+  'dew_point': '°F',
+  'humidity': '%',
+  'precip': 'in',
+  'snow': 'in',
+  'rain': 'in',
+  'days_100': "days",
+  'frost_days': "days",
+  'cloud_cover': "%",
+  'pressure': "mb",
+  'wind_speed': "mph",
+}
+
 # Initialize the app
 external_stylesheets = [dbc.themes.BOOTSTRAP, dbc.themes.DARKLY, 'dark_dropdown.css']
 
@@ -2465,6 +2482,9 @@ def monthly_trend(metric, start_year):
   # Add traces from the second chart
   for trace in chart2.data:
       fig.add_trace(trace, row=1, col=2)
+
+  fig.update_yaxes(title_text=units[metric], row=1, col=1)
+  fig.update_yaxes(title_text=units[metric], row=1, col=2)
 
   # Update layout
   fig.update_layout(showlegend=True, height=700)
