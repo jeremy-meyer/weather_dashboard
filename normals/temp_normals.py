@@ -42,7 +42,7 @@ data_for_normal['initial_prediction'] = round(model_norm.predict(basis_normal),2
 
 # Initial Fit
 sns.scatterplot(data_for_normal, x='day_of_year', y='max_temp', legend=None, alpha=0.4, color='red', size=3)
-sns.lineplot(data_for_normal[data_for_normal['year']==2024], x='day_of_year', y='initial_prediction', color='darkred', linewidth=2)
+sns.lineplot(data_for_normal[data_for_normal['year']==normal_end_year], x='day_of_year', y='initial_prediction', color='darkred', linewidth=2)
 plt.title('Average High Temperatures')
 plt.show()
 
